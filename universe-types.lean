@@ -76,16 +76,6 @@ def enumerateArrow {α β : Type} (as : List α) (bs : List β) (beq : α → α
 --   intro f hf
 --   sorry
 
-theorem enumerateArrow_mem_lemma (as : List α) (b : β) (bs' : List β) (eq : α → α → Bool) :
-    ∀ f, f ∈ enumerateArrow as (b :: bs') eq ↔ ∀ a, a ∈ as ∨ f a = b := by
-  induction as with
-  | nil => exact fun f => ⟨fun hf => have := List.mem_singleton.mp hf; fun a => .inr <| congrFun this a,
-                 fun h => List.mem_singleton.mpr <| funext fun a => match h a with | .inl h' => nomatch h' | .inr h' => h'⟩
-  | cons a as' ih =>
-    intro f; constructor
-    · intros h a'
-      sorry
-    · sorry
 
 mutual
 def beq (t : Finite) (x y : t.asType) : Bool :=
@@ -142,13 +132,47 @@ abbrev _root_.Complete (l : List α) : Prop :=
 
 section
 
-theorem enumerateArrow_complete {α β} (as : List α) {bs : List β} (hb : bs ≠ []) {eq : α → α → Bool} (heq : ∀ a a', eq a a' = true ↔ a = a')
-    (ha : Complete as)
+/-- `enumerateArrow` generates all functions that take inputs from `as` and send them to elements in `bs`.
+  What do the functions do with the inputs not in `as`? Send them to the default element in `bs` (the head).  -/
+theorem enumerateArrow_mem_lemma (as : List α) (b : β) (bs' : List β) (eq : α → α → Bool) (heq : ∀ a a', eq a a' = true ↔ a = a') (hb : Complete (b :: bs')) :
+    ∀ f, (∀ a, a ∈ as ∨ f a = b) → f ∈ enumerateArrow as (b :: bs') eq  := by
+  induction as with
+  | nil => exact fun f h =>
+        List.mem_singleton.mpr <| funext fun a =>
+          match h a with
+          | .inl h' => nomatch h'
+          | .inr h' => h'
+  | cons a as' ih =>
+    intro f h
+    simp only [List.mem_cons, or_assoc] at h
+    let f' a' := if eq a a' then b else f a'
+    replace ih := ih f'
+    have : ∀ (a' : α), a' ∈ as' ∨ f' a' = b :=
+      fun a' =>
+        match ha' : eq a a' with
+        | true => .inr <| by simp [f', ha']
+        | false =>
+          match h a' with
+          | .inl ha'₂ => by symm at ha'₂; rw [←heq] at ha'₂; simp_all
+          | .inr h => by unfold f'; simp [ha', h]
+
+    rw [enumerateArrow_cons]
+    rw [List.mem_map]
+    -- witnesses (f₀, b₀) must satisfy f a = b₀, and for all a' ≠ a, f₀ a' = f a'
+    exists (f', f a)
+    simp [List.mem_product]
+
+    refine ⟨⟨ih this, List.mem_cons.mp <| hb (f a)⟩, ?_⟩
+    funext; split <;> simp_all [f']
+
+theorem enumerateArrow_complete {α β} {as : List α} {bs : List β} (hb : bs ≠ []) {eq : α → α → Bool} (heq : ∀ a a', eq a a' = true ↔ a = a')
+    (ha : Complete as) (hb' : Complete bs)
     : Complete (enumerateArrow as bs eq) :=
   fun f =>
     match bs with
-    | b :: bs' => (enumerateArrow_mem_lemma as b bs' eq f).mpr fun a => .inl (ha a)
+    | b :: bs' => enumerateArrow_mem_lemma as b bs' eq heq hb' f fun a => .inl (ha a)
 
+#print axioms enumerateArrow_complete
 end
 
 mutual
