@@ -62,6 +62,8 @@ where
     | .pair l r => (go l, go r)
     | .arrow _ dst => fun _ => go dst
 
+-- I enumerate arrow types directly. I find it makes more sense than
+-- `Finite.functions` in the original example
 def enumerateArrow {α β : Type} (as : List α) (bs : List β) (beq : α → α → Bool) : List (α → β) :=
   as.foldr (init := match bs with | [] => [] | b :: _ => [fun _ => b]) -- note this `init` is not correct if `as = []`
     fun a acc =>
