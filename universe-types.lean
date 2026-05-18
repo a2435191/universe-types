@@ -34,9 +34,7 @@ theorem map_product {as : List α} {bs : List β} {f : α → γ} {g : β → δ
     (as.product bs).map (Prod.map f g) = product (as.map f) (bs.map g) :=
   match as with
   | [] => rfl
-  -- | _ :: _, [] => product_nil_right ▸ product_nil_right (as := map f _) ▸ rfl
   | _ :: _ =>
-    -- product_eq ▸ Eq.symm product_eq ▸ map_flatMap ▸ Eq.symm flatMap_map \t sorry
     by simp [product, map_flatMap, flatMap_map]; rfl -- TODO
 
 end List
