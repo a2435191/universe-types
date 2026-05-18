@@ -172,7 +172,6 @@ theorem enumerateArrow_complete {α β} {as : List α} {bs : List β} (hb : bs �
     match bs with
     | b :: bs' => enumerateArrow_mem_lemma as b bs' eq heq hb' f fun a => .inl (ha a)
 
-#print axioms enumerateArrow_complete
 end
 
 mutual
@@ -197,7 +196,12 @@ theorem enumerate_complete : Complete (enumerate t) :=
     | false => List.mem_cons_of_mem true (List.mem_singleton_self false)
   | .pair _ _ => fun (y₁, y₂) =>
     List.mem_product.mpr ⟨enumerate_complete y₁, enumerate_complete y₂⟩
-  | .arrow tα tβ => sorry
+  | .arrow _ _ =>
+    enumerateArrow_complete
+      enumerate_ne_nil
+      (fun _ _ => ⟨eq_of_beq_eq_true, fun h => h ▸ beq_refl⟩)
+      enumerate_complete
+      enumerate_complete
 end
 
 instance {t : Finite} : LawfulBEq t.asType where
