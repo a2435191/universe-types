@@ -76,8 +76,8 @@ def enumerateArrow {α β : Type} (as : List α) (bs : List β) (beq : α → α
 --   intro f hf
 --   sorry
 
-theorem enumerateArrow_mem_lemma (as : List α) (b : β) (bs' : List β) (beq : α → α → Bool) :
-    ∀ f, f ∈ enumerateArrow as (b :: bs) eq ↔ ∀ a, a ∈ as ∨ f a = b := by
+theorem enumerateArrow_mem_lemma (as : List α) (b : β) (bs' : List β) (eq : α → α → Bool) :
+    ∀ f, f ∈ enumerateArrow as (b :: bs') eq ↔ ∀ a, a ∈ as ∨ f a = b := by
   induction as with
   | nil => exact fun f => ⟨fun hf => have := List.mem_singleton.mp hf; fun a => .inr <| congrFun this a,
                  fun h => List.mem_singleton.mpr <| funext fun a => match h a with | .inl h' => nomatch h' | .inr h' => h'⟩
@@ -142,116 +142,12 @@ abbrev _root_.Complete (l : List α) : Prop :=
 
 section
 
--- theorem enumerateArrow_mem_attach_mp {as : List α} {bs : List β} {eq : α → α → Bool} (ha : Complete as):
---     ∀ (f : α → β), (f ·.1) ∈ enumerateArrow as.attach bs (eq · ·) → f ∈ enumerateArrow as bs eq := by
---   -- TODO lmao clean this up
---   unfold enumerateArrow
---   intro f h
---   let r : List ({ x // x ∈ as } → β) → List (α → β) → Prop :=
---     fun l' l => ∀ f, (f ·.1) ∈ l' → f ∈ l
-
---   have h' := @List.foldr_subtype α (β := List ({ x // x ∈ as } → β)) (p := (· ∈ as)) (as.attach) (fun a acc => List.map (fun x a' => if eq a.val a'.val = true then x.snd else x.fst a') (acc.product bs))
---       (fun a acc => List.map (fun x a' => if eq a a'.val then x.snd else x.fst a') (acc.product bs))
---   rw [h' (by simp), List.unattach_attach] at h
-
---   revert h f
---   show r _ _
---   apply List.foldr_rel
---   · intro f
---     match bs with
---     | [] => simp
---     | _ :: _ => simp; intro h; funext a; have := congrFun h ⟨a, ha a⟩; simp [this]
---   · intro a _ fs' fs h f hf
---     rw [List.mem_map] at ⊢ hf
---     have ⟨(f', b), hmem, heq'⟩ := hf
-
---     have ⟨hf', hb⟩ := List.mem_product.mp hmem
---     exists ((f' ⟨·, ha _⟩), b)
---     rewrite [List.mem_product]
---     simp at heq'
---     have heq'' : f = fun a' => if eq a a' then b else f' ⟨a', ha a'⟩ := by
---       funext a'
---       let a'' := Subtype.mk a' (ha a')
---       have : a' = a''.val := rfl
---       rw [this, ←congrFun heq' a'']
---     refine ⟨⟨?_, ?_⟩, ?_⟩
---     · apply h
---       exact hf'
---     · assumption
---     · funext a'
---       rw [heq'']
-
 theorem enumerateArrow_complete {α β} (as : List α) {bs : List β} (hb : bs ≠ []) {eq : α → α → Bool} (heq : ∀ a a', eq a a' = true ↔ a = a')
-    (hb' : Complete bs)
-    : Complete (enumerateArrow as.attach bs (eq · ·)) := by
-  intros f
-  induction as with
-  | nil =>
-    simp only [enumerateArrow, List.attach_nil, List.foldr_nil]
-    split
-    · contradiction
-    · rw [List.mem_singleton]
-      funext a
-      nomatch a.2
-  | cons a as' ih =>
-    let f' : { x // x ∈ as' } → β := fun a => f ⟨a.1, List.mem_cons_of_mem _ a.2⟩
-    replace ih := ih f'
-    rw [List.attach_cons]
-    simp only
-    simp [enumerateArrow]
-    exists f, f ⟨a, List.mem_cons_self⟩
-    simp [List.mem_product]
-    refine ⟨⟨?_, ?_⟩, ?_⟩
-    · sorry
-    · apply hb'
-    · funext <;> simp_all
-  -- intros f
-  -- apply enumerateArrow_mem_attach_mp ha
-  -- induction as with
-  -- | nil =>
-  --   simp [enumerateArrow]
-  --   split
-  --   · contradiction
-  --   · rw [List.mem_singleton]
-  --     funext a; nomatch a.2
-  -- | cons a as' ih =>
-
-  --   sorry
-  -- match as with
-  -- | [] => match bs with | b :: bs' => fun f =>
-  --   List.mem_singleton.mpr <| funext fun a => nomatch (ha a)
-  -- | a :: as' => by
-  --   simp [enumerateArrow_cons, Complete]
-  --   show ∀ f, ∃ f' b', _
-  --   intro f
-  --   exists f, f a
-  --   rw [List.mem_product]
-  --   refine ⟨⟨?_, ?_⟩, ?_⟩
-  --   · have := enumerateArrow_complete as'.attach hb (eq := (eq · ·)) (by simp_all) as'.mem_attach hb' (f ·)
-
-  --     have : f ∈ enumerateArrow (a :: as') bs eq := by
-  --       apply enumerateArrow_mem_attach_mp ha
-  --       rw [List.attach_cons, enumerateArrow_cons]
-  --       sorry
-
-  --     sorry
-      -- simp at this
-      -- unfold enumerateArrow at this
-      -- simp at this
-      -- have h' := @List.foldr_subtype α (β := List ({ x // x ∈ as' } → β)) (p := (· ∈ as')) (as'.attach) (fun a acc => List.map (fun x a' => if eq a.val a'.val = true then x.snd else x.fst a') (acc.product bs))
-      --   (fun a acc => List.map (fun x a' => if eq a a'.val then x.snd else x.fst a') (acc.product bs))
-      -- rw [h' (by simp)] at this
-      -- simp at this
-      -- unfold enumerateArrow
-      -- simp
-
-      -- sorry
-    -- · apply hb'
-    -- · funext a'
-    --   simp [heq]
-    --   intro ha'; subst a; rfl
-
-termination_by as.length
+    (ha : Complete as)
+    : Complete (enumerateArrow as bs eq) :=
+  fun f =>
+    match bs with
+    | b :: bs' => (enumerateArrow_mem_lemma as b bs' eq f).mpr fun a => .inl (ha a)
 
 end
 
