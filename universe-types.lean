@@ -71,13 +71,6 @@ def enumerateArrow {α β : Type} (as : List α) (bs : List β) (beq : α → α
         fun a' =>
           if beq a a' then b else oldFn a'
 
--- theorem enumerateArrow_mem_weaken (a : α) (as : List α) (bs : List β) (beq : α → α → Bool) :
---     ∀ f, f ∈ enumerateArrow (a :: as) bs eq → f ∈ enumerateArrow as bs eq := by
---   simp only [enumerateArrow, List.foldr_cons]
---   intro f hf
---   sorry
-
-
 mutual
 def beq (t : Finite) (x y : t.asType) : Bool :=
   match t with
