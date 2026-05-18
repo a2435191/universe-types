@@ -40,32 +40,60 @@ theorem map_product {as : List α} {bs : List β} {f : α → γ} {g : β → δ
 end List
 
 inductive Finite where
-  | unit : Finite
-  | bool : Finite
+  | empty
+  | unit
+  | bool
   | pair : Finite → Finite → Finite
   | arrow : Finite → Finite → Finite
 
 namespace Finite
 
 abbrev asType : Finite → Type
+  | .empty => Empty
   | .unit => Unit
   | .bool => Bool
   | .pair l r => l.asType × r.asType
   | .arrow src dst => src.asType → dst.asType
 
-instance {t : Finite} : Inhabited t.asType :=
-  ⟨go t⟩
-where
-  go : (t : Finite) → t.asType
-    | .unit => default
-    | .bool => default
-    | .pair l r => (go l, go r)
-    | .arrow _ dst => fun _ => go dst
+-- We need this predicate and the theorem `isEmpty_iff` to construct the vacuous
+-- function (like `Empty.elim`) below in `enumerate`. Otherwise we would need some way of getting from
+-- `enumerate tα = []` and `enumerate tβ = []` to `α → β`, which would probably involve attaching the completeness
+-- theorems to everything, and that would be a pain.
+abbrev isEmpty : Finite → Bool
+  | .empty => true
+  | .unit | .bool => false
+  | .pair l r => l.isEmpty || r.isEmpty
+  | .arrow src dst => !src.isEmpty && dst.isEmpty
+
+theorem isEmpty_iff {t} : isEmpty t = true ↔ (t.asType → False) := by
+  rcases t
+  · simp only [asType, true_iff]; nofun
+  · simp
+  · simp
+  · rename_i l r
+    simp only [Bool.or_eq_true, isEmpty_iff (t := l), isEmpty_iff (t := r), Prod.forall]
+    grind
+  · rename_i src dst
+    simp only [isEmpty, Bool.and_eq_true, Bool.not_eq_true', Bool.eq_false_iff]
+    simp only [ne_eq, isEmpty_iff, Classical.not_forall, not_false_eq_true]
+    constructor
+    · intro h f
+      have ⟨⟨x, _⟩, hy⟩ := h
+      exact hy (f x)
+    · intro h
+      simp [asType] at h
+      refine ⟨?_, fun y => h (fun _ => y)⟩
+      -- TODO: I don't think we need Classical here?
+      rw [←Classical.not_forall_not]
+      intro h'
+      exact h fun x => (h' x trivial).elim
 
 -- I enumerate arrow types directly. I find it makes more sense than
 -- `Finite.functions` in the original example
+/-- Enumerate all functions from `α → β`. Note that if `as = bs = []`,
+  returns `[]` instead of the single function from an empty type to an empty type. -/
 def enumerateArrow {α β : Type} (as : List α) (bs : List β) (beq : α → α → Bool) : List (α → β) :=
-  as.foldr (init := match bs with | [] => [] | b :: _ => [fun _ => b]) -- note this `init` is not correct if `as = []`
+  as.foldr (init := match bs with | [] => [] | b :: _ => [fun _ => b]) -- note this `init` is not correct if `as = bs = []`
     fun a acc =>
       (acc.product bs).map fun (oldFn, b) =>
         fun a' =>
@@ -74,6 +102,7 @@ def enumerateArrow {α β : Type} (as : List α) (bs : List β) (beq : α → α
 mutual
 def beq (t : Finite) (x y : t.asType) : Bool :=
   match t with
+  | .empty => true -- vacuous
   | .unit => true
   | .bool => x == y
   | .pair l r =>
@@ -85,10 +114,16 @@ def beq (t : Finite) (x y : t.asType) : Bool :=
 
 /-- All elements of `t.asType` -/
 def enumerate : (t : Finite) → List t.asType
+  | .empty => []
   | .unit => [()]
   | .bool => [true, false]
   | .pair l r => List.product (enumerate l) (enumerate r)
-  | .arrow tα tβ => enumerateArrow (enumerate tα) (enumerate tβ) (beq tα)
+  | .arrow tα tβ =>
+    if h : isEmpty tα then
+      -- vacuous function
+      [fun a => (isEmpty_iff.mp h a).elim]
+    -- else if isEmpty tβ then [] -- could include this small optimization
+    else enumerateArrow (enumerate tα) (enumerate tβ) (beq tα)
 end
 
 instance {t : Finite} : BEq t.asType where
@@ -108,14 +143,9 @@ theorem enumerateArrow_ne_nil (hb : bs ≠ []) : enumerateArrow as bs eq ≠ [] 
     have := List.product_ne_nil (enumerateArrow_ne_nil hb (eq := eq)) hb
     this hn
 
-theorem enumerate_ne_nil : enumerate t ≠ [] :=
-  match t with
-  | .unit | .bool => List.cons_ne_nil _ _
-  | .pair _ _ => List.product_ne_nil enumerate_ne_nil enumerate_ne_nil
-  | .arrow _ _ => enumerateArrow_ne_nil enumerate_ne_nil
-
 theorem beq_refl : beq t x x = true :=
   match t with
+  | .empty => rfl
   | .unit => rfl
   | .bool => match x with | true | false => rfl
   | .pair _ _ => Bool.and_eq_true_iff.mpr ⟨beq_refl, beq_refl⟩
@@ -159,12 +189,13 @@ theorem enumerateArrow_mem_lemma (as : List α) (b : β) (bs' : List β) (eq : �
     refine ⟨⟨ih this, List.mem_cons.mp <| hb (f a)⟩, ?_⟩
     funext; split <;> simp_all [f']
 
-theorem enumerateArrow_complete {α β} {as : List α} {bs : List β} (hb : bs ≠ []) {eq : α → α → Bool} (heq : ∀ a a', eq a a' = true ↔ a = a')
+theorem enumerateArrow_complete {α β} {as : List α} {bs : List β} (hb : as ≠ [] ∨ bs ≠ []) {eq : α → α → Bool} (heq : ∀ a a', eq a a' = true ↔ a = a')
     (ha : Complete as) (hb' : Complete bs)
     : Complete (enumerateArrow as bs eq) :=
   fun f =>
-    match bs with
-    | b :: bs' => enumerateArrow_mem_lemma as b bs' eq heq hb' f fun a => .inl (ha a)
+    match as, bs with
+    | a :: _, [] => nomatch hb' (f a)
+    | as, b :: bs' => enumerateArrow_mem_lemma as b bs' eq heq hb' f fun a => .inl (ha a)
 
 end
 
@@ -184,19 +215,32 @@ theorem eq_of_beq_eq_true (h : beq t x y = true) : x = y :=
 
 theorem enumerate_complete : Complete (enumerate t) :=
   match t with
+  | .empty => nofun
   | .unit => fun () => List.mem_singleton_self ()
   | .bool => fun
     | true => List.mem_cons_self
     | false => List.mem_cons_of_mem true (List.mem_singleton_self false)
   | .pair _ _ => fun (y₁, y₂) =>
     List.mem_product.mpr ⟨enumerate_complete y₁, enumerate_complete y₂⟩
-  | .arrow _ _ =>
-    enumerateArrow_complete
-      enumerate_ne_nil
-      (fun _ _ => ⟨eq_of_beq_eq_true, fun h => h ▸ beq_refl⟩)
-      enumerate_complete
-      enumerate_complete
+  | .arrow tα tβ => fun f => by -- TODO
+    simp only [enumerate]
+    split
+    · rw [List.mem_singleton]
+      funext a
+      exact (isEmpty_iff.mp ‹_› a).elim
+    · apply enumerateArrow_complete
+      · -- simple enough to show `enumerate tα ≠ []`
+        rename_i ha
+        exact .inl fun hn =>
+          ha <| isEmpty_iff.mpr fun a =>
+            nomatch hn ▸ enumerate_complete a
+      · exact fun _ _ => ⟨eq_of_beq_eq_true, fun h => h ▸ beq_refl⟩
+      · apply enumerate_complete
+      · apply enumerate_complete
+
 end
+
+#print axioms enumerate_complete
 
 instance {t : Finite} : LawfulBEq t.asType where
   rfl := beq_refl
