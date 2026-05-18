@@ -1,4 +1,5 @@
--- All in term mode, for fun
+-- Mostly in term mode, for fun
+-- https://lean-lang.org/functional_programming_in_lean/Programming-with-Dependent-Types/The-Universe-Design-Pattern
 
 namespace List
 
