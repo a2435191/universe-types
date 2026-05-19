@@ -1,8 +1,11 @@
 -- Mostly in term mode, for fun
 -- https://lean-lang.org/functional_programming_in_lean/Programming-with-Dependent-Types/The-Universe-Design-Pattern
 
+-- `List.product` and some helper lemmas, since that's in batteries and
+-- I want this to be a standalone file
 namespace List
 
+/-- The Cartesian product -/
 def product (as : List α) (bs : List β) : List (α × β) :=
   as.flatMap fun a => bs.map (a, ·)
 
@@ -19,23 +22,6 @@ theorem product_ne_nil {as : List α} {bs : List β} (ha : as ≠ []) (hb : bs �
   have ⟨_a, _as', ha'⟩ := ne_nil_iff_exists_cons.mp ha
   have ⟨_b, _bs', hb'⟩ := ne_nil_iff_exists_cons.mp hb
   ha' ▸ hb' ▸ fun h => cons_ne_nil _ _ h
-
-theorem product_eq {as : List α} {bs : List β} :
-    as.product bs = as.flatMap fun a => bs.map (a, ·) :=
-  rfl
-
-theorem product_nil_left {α β} {bs : List β} : product (α := α) [] bs = [] :=
-  rfl
-
-theorem product_nil_right {α β} {as : List α} : product (β := β) as [] = [] :=
-  product_eq ▸ flatMap_eq_nil_iff.mpr fun _ _ => rfl
-
-theorem map_product {as : List α} {bs : List β} {f : α → γ} {g : β → δ} :
-    (as.product bs).map (Prod.map f g) = product (as.map f) (bs.map g) :=
-  match as with
-  | [] => rfl
-  | _ :: _ =>
-    by simp [product, map_flatMap, flatMap_map]; rfl -- TODO
 
 end List
 
@@ -67,26 +53,46 @@ abbrev isEmpty : Finite → Bool
   | .pair l r => l.isEmpty || r.isEmpty
   | .arrow src dst => !src.isEmpty && dst.isEmpty
 
-theorem isEmpty_iff {t} : isEmpty t = true ↔ (t.asType → False) := by
-  rcases t <;> try (simp; done)
-  · simp only [asType, true_iff]; nofun
-  · rename_i l r
-    simp only [Bool.or_eq_true, isEmpty_iff (t := l), isEmpty_iff (t := r), Prod.forall]
-    grind
-  · rename_i src dst
-    simp only [isEmpty, Bool.and_eq_true, Bool.not_eq_true', Bool.eq_false_iff]
-    simp only [ne_eq, isEmpty_iff, Classical.not_forall, not_false_eq_true]
-    constructor
-    · intro h f
-      have ⟨⟨x, _⟩, hy⟩ := h
-      exact hy (f x)
-    · intro h
-      simp [asType] at h
-      refine ⟨?_, fun y => h (fun _ => y)⟩
-      -- TODO: I don't think we need Classical here?
-      rw [←Classical.not_forall_not]
-      intro h'
-      exact h fun x => (h' x trivial).elim
+mutual
+-- a def so we can define it mutually against default
+private def imp_false_of_isEmpty_aux {t} (h : isEmpty t = true) : PLift (t.asType → False) :=
+  match t with
+  | .empty => ⟨nofun⟩
+  | .pair l r =>
+    -- we would just do `match Bool.or_eq_true_iff.mp h` if we didn't need to produce a `Type`
+    match hl : isEmpty l, hr : isEmpty r with
+    | true, _ => ⟨fun (x, _) => (imp_false_of_isEmpty_aux hl).1 x⟩
+    | _, true => ⟨fun (_, y) => (imp_false_of_isEmpty_aux hr).1 y⟩
+    | false, false => False.elim <|
+      have := Bool.or_eq_false_iff.mpr ⟨hl, hr⟩
+      (Bool.eq_true_and_eq_false_self ((l.pair r).isEmpty)).mp ⟨h, this⟩
+  | .arrow _ _ =>
+    have ⟨hsrc, hdst⟩ := Bool.not_eq_true' _ ▸ Bool.and_eq_true_iff.mp h
+    ⟨fun f => (imp_false_of_isEmpty_aux hdst).1 (f (default hsrc))⟩
+
+def default {t} (h : isEmpty t = false) : t.asType :=
+  match t with
+  | .unit | .bool | .option _ => Inhabited.default
+  | .pair _ _ =>
+    have ⟨hl, hr⟩ := Bool.or_eq_false_iff.mp h
+    (default hl, default hr)
+  | .arrow src _ =>
+    have := Bool.not_eq_true' _ ▸ Bool.and_eq_false_imp.mp h
+    if h : isEmpty src then
+      fun x => ((imp_false_of_isEmpty_aux h).1 x).elim
+    else
+      fun _ => default (this <| (Bool.not_eq_true _).symm ▸ h)
+end
+
+instance {t} (h : isEmpty t = false) : Inhabited t.asType :=
+  ⟨default h⟩
+
+theorem isEmpty_iff {t} : isEmpty t = true ↔ (t.asType → False) :=
+  ⟨fun h => (imp_false_of_isEmpty_aux h).1,
+   fun h =>
+    match h' : t.isEmpty with
+    | false => (h (default h')).elim
+    | true => rfl⟩
 
 -- I enumerate arrow types directly. I find it makes more sense than
 -- `Finite.functions` in the original example
@@ -122,7 +128,7 @@ def enumerate : (t : Finite) → List t.asType
   | .empty => []
   | .unit => [()]
   | .bool => [true, false]
-  | .option t => .none :: (enumerate t).map some
+  | .option t => none :: (enumerate t).map some
   | .pair l r => List.product (enumerate l) (enumerate r)
   | .arrow tα tβ =>
     if h : isEmpty tα then
@@ -213,7 +219,7 @@ theorem eq_of_beq_eq_true (h : beq t x y = true) : x = y :=
   match t with
   | .unit => rfl
   | .bool => LawfulBEq.eq_of_beq h
-  | .option t =>
+  | .option _ =>
     match x, y with
     | .none, .none => rfl
     | .some _, .some _ => congrArg _ (eq_of_beq_eq_true h)
