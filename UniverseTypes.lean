@@ -54,21 +54,21 @@ abbrev isEmpty : Finite → Bool
   | .arrow src dst => !src.isEmpty && dst.isEmpty
 
 mutual
--- a def so we can define it mutually against default
-private def imp_false_of_isEmpty_aux {t} (h : isEmpty t = true) : PLift (t.asType → False) :=
+-- This is a def instead of a theorem so we can define it mutually with default
+def empty_of_isEmpty {t} (h : isEmpty t = true) : t.asType → Empty :=
   match t with
-  | .empty => ⟨nofun⟩
+  | .empty => nofun
   | .pair l r =>
     -- we would just do `match Bool.or_eq_true_iff.mp h` if we didn't need to produce a `Type`
     match hl : isEmpty l, hr : isEmpty r with
-    | true, _ => ⟨fun (x, _) => (imp_false_of_isEmpty_aux hl).1 x⟩
-    | _, true => ⟨fun (_, y) => (imp_false_of_isEmpty_aux hr).1 y⟩
+    | true, _ => fun (x, _) => empty_of_isEmpty hl x
+    | _, true => fun (_, y) => empty_of_isEmpty hr y
     | false, false => False.elim <|
       have := Bool.or_eq_false_iff.mpr ⟨hl, hr⟩
       (Bool.eq_true_and_eq_false_self ((l.pair r).isEmpty)).mp ⟨h, this⟩
   | .arrow _ _ =>
     have ⟨hsrc, hdst⟩ := Bool.not_eq_true' _ ▸ Bool.and_eq_true_iff.mp h
-    ⟨fun f => (imp_false_of_isEmpty_aux hdst).1 (f (default hsrc))⟩
+    fun f => empty_of_isEmpty hdst (f (default hsrc))
 
 def default {t} (h : isEmpty t = false) : t.asType :=
   match t with
@@ -79,7 +79,7 @@ def default {t} (h : isEmpty t = false) : t.asType :=
   | .arrow src _ =>
     have := Bool.not_eq_true' _ ▸ Bool.and_eq_false_imp.mp h
     if h : isEmpty src then
-      fun x => ((imp_false_of_isEmpty_aux h).1 x).elim
+      fun x => (empty_of_isEmpty h x).elim
     else
       fun _ => default (this <| (Bool.not_eq_true _).symm ▸ h)
 end
@@ -88,7 +88,7 @@ instance {t} (h : isEmpty t = false) : Inhabited t.asType :=
   ⟨default h⟩
 
 theorem isEmpty_iff {t} : isEmpty t = true ↔ (t.asType → False) :=
-  ⟨fun h => (imp_false_of_isEmpty_aux h).1,
+  ⟨fun h x => (empty_of_isEmpty h x).elim,
    fun h =>
     match h' : t.isEmpty with
     | false => (h (default h')).elim
