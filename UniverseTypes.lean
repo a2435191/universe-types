@@ -1,8 +1,8 @@
 -- Mostly in term mode, for fun
 -- https://lean-lang.org/functional_programming_in_lean/Programming-with-Dependent-Types/The-Universe-Design-Pattern
 
--- `List.product` and some helper lemmas, since that's in batteries and
--- I want this to be a standalone file
+/-! `List.product` and some helper lemmas, since that's in batteries and
+  I want this to be a standalone file -/
 namespace List
 
 /-- The Cartesian product -/
@@ -10,11 +10,11 @@ def product (as : List α) (bs : List β) : List (α × β) :=
   as.flatMap fun a => bs.map (a, ·)
 
 theorem mem_product {as : List α} {bs : List β} : (a, b) ∈ as.product bs ↔ a ∈ as ∧ b ∈ bs := ⟨
-  (fun h =>
+  fun h =>
     have ⟨_, ha', h'⟩ := mem_flatMap.mp h
     have ⟨_, hb', h''⟩ := mem_map.mp h'
     have ⟨ha'_eq, hb'_eq⟩ := Prod.mk.inj h''
-    ⟨ha'_eq ▸ ha', hb'_eq ▸ hb'⟩),
+    ⟨ha'_eq ▸ ha', hb'_eq ▸ hb'⟩,
   fun ⟨ha, hb⟩ =>
     mem_flatMap_of_mem ha <| mem_map_of_mem hb⟩
 
@@ -35,6 +35,8 @@ inductive Finite where
 
 namespace Finite
 
+section isEmpty
+
 abbrev asType : Finite → Type
   | .empty => Empty
   | .unit => Unit
@@ -52,6 +54,8 @@ abbrev isEmpty : Finite → Bool
   | .unit | .bool | .option _ => false
   | .pair l r => l.isEmpty || r.isEmpty
   | .arrow src dst => !src.isEmpty && dst.isEmpty
+
+/-! We show constructively that `isEmpty` behaves correctly -/
 
 mutual
 -- This is a def instead of a theorem so we can define it mutually with default
@@ -94,7 +98,11 @@ theorem isEmpty_iff {t} : isEmpty t = true ↔ (t.asType → False) :=
     | false => (h (default h')).elim
     | true => rfl⟩
 
--- I enumerate arrow types directly. I find it makes more sense than
+end isEmpty
+
+section Defs
+
+-- I enumerate arrow types directly. I understand it easier than
 -- `Finite.functions` in the original example
 /-- Enumerate all functions from `α → β`. Note that if `as = bs = []`,
   returns `[]` instead of the single function from an empty type to an empty type. -/
@@ -141,7 +149,17 @@ end
 instance {t : Finite} : BEq t.asType where
   beq := beq t
 
+/-- info: false -/
+#guard_msgs in
 #eval beq (.arrow (.pair (.arrow .bool .bool) .bool) .bool) (fun (f, x) => f x) (fun (f, x) => f (not x))
+
+/-- info: true -/
+#guard_msgs in
+#eval beq (.arrow .empty .bool) (fun _ => true) (fun _ => false)
+
+end Defs
+
+section Lemmas
 
 theorem enumerateArrow_cons {as : List α} {bs : List β} {eq : α → α → Bool} {a : α} :
     enumerateArrow (a :: as) bs eq = ((enumerateArrow as bs eq).product bs).map (fun (f, b) a' => if eq a a' then b else f a') :=
@@ -155,19 +173,12 @@ theorem enumerateArrow_ne_nil (hb : bs ≠ []) : enumerateArrow as bs eq ≠ [] 
     have := List.product_ne_nil (enumerateArrow_ne_nil hb (eq := eq)) hb
     this hn
 
-theorem beq_refl : beq t x x = true :=
-  match t with
-  | .empty => rfl
-  | .unit => rfl
-  | .bool => match x with | true | false => rfl
-  | .option t => match x with | none => rfl | some _ => beq_refl (t := t)
-  | .pair _ _ => Bool.and_eq_true_iff.mpr ⟨beq_refl, beq_refl⟩
-  | .arrow _ _ => List.all_eq_true.mpr fun _ _ => beq_refl
+end Lemmas
 
 abbrev _root_.Complete (l : List α) : Prop :=
   ∀ a, a ∈ l
 
-section
+section Lemmas.enumerateArrow
 
 /-- `enumerateArrow` generates all functions that take inputs from `as` and send them to elements in `bs`.
   What do the functions do with the inputs not in `as`? Send them to the default element in `bs` (the head).  -/
@@ -210,11 +221,25 @@ theorem enumerateArrow_complete {α β} {as : List α} {bs : List β} (hb : as �
     | a :: _, [] => nomatch hb' (f a)
     | as, b :: bs' => enumerateArrow_mem_lemma as b bs' eq heq hb' f fun a => .inl (ha a)
 
-end
+end Lemmas.enumerateArrow
 
+section Results
+
+/-! We want to show that beq actually computes equality correctly, i.e.
+  `beq t x y = true ↔ x = y`. To show the forward direction, we also
+  need that `enumerate t` actually contains all the terms of type `asType t`. -/
+
+-- The converse is quite easy
+theorem beq_refl : beq t x x = true :=
+  match t with
+  | .empty => rfl
+  | .unit => rfl
+  | .bool => match x with | true | false => rfl
+  | .option t => match x with | none => rfl | some _ => beq_refl (t := t)
+  | .pair _ _ => Bool.and_eq_true_iff.mpr ⟨beq_refl, beq_refl⟩
+  | .arrow _ _ => List.all_eq_true.mpr fun _ _ => beq_refl
 
 mutual
-
 theorem eq_of_beq_eq_true (h : beq t x y = true) : x = y :=
   match t with
   | .unit => rfl
@@ -259,11 +284,14 @@ theorem enumerate_complete : Complete (enumerate t) :=
       · exact fun _ _ => ⟨eq_of_beq_eq_true, fun h => h ▸ beq_refl⟩
       · apply enumerate_complete
       · apply enumerate_complete
-
 end
 
+/-- info: 'Finite.enumerate_complete' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
 #print axioms enumerate_complete
 
 instance {t : Finite} : LawfulBEq t.asType where
   rfl := beq_refl
   eq_of_beq := eq_of_beq_eq_true
+
+end Results
