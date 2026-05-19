@@ -43,6 +43,7 @@ inductive Finite where
   | empty
   | unit
   | bool
+  | option : Finite → Finite
   | pair : Finite → Finite → Finite
   | arrow : Finite → Finite → Finite
 
@@ -52,6 +53,7 @@ abbrev asType : Finite → Type
   | .empty => Empty
   | .unit => Unit
   | .bool => Bool
+  | .option t => Option t.asType
   | .pair l r => l.asType × r.asType
   | .arrow src dst => src.asType → dst.asType
 
@@ -61,15 +63,13 @@ abbrev asType : Finite → Type
 -- theorems to everything, and that would be a pain.
 abbrev isEmpty : Finite → Bool
   | .empty => true
-  | .unit | .bool => false
+  | .unit | .bool | .option _ => false
   | .pair l r => l.isEmpty || r.isEmpty
   | .arrow src dst => !src.isEmpty && dst.isEmpty
 
 theorem isEmpty_iff {t} : isEmpty t = true ↔ (t.asType → False) := by
-  rcases t
+  rcases t <;> try (simp; done)
   · simp only [asType, true_iff]; nofun
-  · simp
-  · simp
   · rename_i l r
     simp only [Bool.or_eq_true, isEmpty_iff (t := l), isEmpty_iff (t := r), Prod.forall]
     grind
@@ -105,6 +105,11 @@ def beq (t : Finite) (x y : t.asType) : Bool :=
   | .empty => true -- vacuous
   | .unit => true
   | .bool => x == y
+  | .option t =>
+    match x, y with
+    | .none, .none => true
+    | .some x', .some y' => beq t x' y'
+    | _, _ => false
   | .pair l r =>
     -- Two pairs are equal iff their parts are respectively equal
     beq l x.fst y.fst && beq r x.snd y.snd
@@ -117,6 +122,7 @@ def enumerate : (t : Finite) → List t.asType
   | .empty => []
   | .unit => [()]
   | .bool => [true, false]
+  | .option t => .none :: (enumerate t).map some
   | .pair l r => List.product (enumerate l) (enumerate r)
   | .arrow tα tβ =>
     if h : isEmpty tα then
@@ -148,6 +154,7 @@ theorem beq_refl : beq t x x = true :=
   | .empty => rfl
   | .unit => rfl
   | .bool => match x with | true | false => rfl
+  | .option t => match x with | none => rfl | some _ => beq_refl (t := t)
   | .pair _ _ => Bool.and_eq_true_iff.mpr ⟨beq_refl, beq_refl⟩
   | .arrow _ _ => List.all_eq_true.mpr fun _ _ => beq_refl
 
@@ -199,12 +206,18 @@ theorem enumerateArrow_complete {α β} {as : List α} {bs : List β} (hb : as �
 
 end
 
+
 mutual
 
 theorem eq_of_beq_eq_true (h : beq t x y = true) : x = y :=
   match t with
   | .unit => rfl
   | .bool => LawfulBEq.eq_of_beq h
+  | .option t =>
+    match x, y with
+    | .none, .none => rfl
+    | .some _, .some _ => congrArg _ (eq_of_beq_eq_true h)
+    | .some _, .none | .none, .some _ => (Bool.false_ne_true h).elim
   | .pair _ _ =>
     have ⟨h₁, h₂⟩ := Bool.and_eq_true_iff.mp h
     Prod.mk.injEq .. ▸ ⟨eq_of_beq_eq_true h₁, eq_of_beq_eq_true h₂⟩
@@ -220,6 +233,9 @@ theorem enumerate_complete : Complete (enumerate t) :=
   | .bool => fun
     | true => List.mem_cons_self
     | false => List.mem_cons_of_mem true (List.mem_singleton_self false)
+  | .option t => fun
+    | .none => List.mem_cons_self
+    | .some x => List.mem_cons_of_mem _ <| List.mem_map_of_mem (enumerate_complete x)
   | .pair _ _ => fun (y₁, y₂) =>
     List.mem_product.mpr ⟨enumerate_complete y₁, enumerate_complete y₂⟩
   | .arrow tα tβ => fun f => by -- TODO
